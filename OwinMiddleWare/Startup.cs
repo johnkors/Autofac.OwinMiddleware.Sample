@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Autofac;
 using Microsoft.Owin;
@@ -16,12 +17,28 @@ namespace OwinMiddleWare
         {
             var builder = new ContainerBuilder();
             builder.RegisterType<SomeComponent>();
+
             builder.RegisterType<CustomMwInheriting>();
-            builder.RegisterType<CustomMwWithoutInheritance>(); // Is not registered as middleware by Autofac because of missing inheritence, and hence not run
+            builder.RegisterType<OtherCustomMwInheriting>();
+
+            // Is not registered as middleware by Autofac because of missing inheritence, and hence not run
+            builder.RegisterType<CustomMwWithoutInheritance>(); 
+
             var container = builder.Build();
 
             app.UseAutofacMiddleware(container); // runs all registered types inheriting from 'OwinMiddleware'
-            //app.Use<CustomMwWithoutInheritance>(); Crashes
+
+
+            // When using Autofac as your mw-runner,
+            // you are not supposed to call them like regular middleware:
+            //app.Use<CustomMwWithoutInheritance>();  => Crashes runtime
+            //app.Use<CustomMwInheriting>(); => Crashes runtime
+
+            app.Run( env =>
+            {
+                env.Response.WriteAsync("Request end!");
+                return Task.FromResult(0);
+            });
         }
     }
 
@@ -37,6 +54,23 @@ namespace OwinMiddleWare
         public override async Task Invoke(IOwinContext ctx)
         {
             await ctx.Response.WriteAsync(_component.SayHi("inheritor"));
+            await Next.Invoke(ctx);
+        }
+    }
+
+    public class OtherCustomMwInheriting : OwinMiddleware
+    {
+        private readonly SomeComponent _component;
+
+        public OtherCustomMwInheriting(OwinMiddleware next, SomeComponent component) : base(next)
+        {
+            _component = component;
+        }
+
+        public override async Task Invoke(IOwinContext ctx)
+        {
+            await ctx.Response.WriteAsync(_component.SayHi("Other"));
+            await Next.Invoke(ctx);
         }
     }
 
@@ -63,7 +97,7 @@ namespace OwinMiddleWare
     {
         public string SayHi(string middleware)
         {
-            return "Hi, " + middleware;
+            return "Hi, " + middleware + "\n";
         }
     }
 }
